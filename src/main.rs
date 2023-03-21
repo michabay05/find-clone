@@ -3,7 +3,6 @@ use std::fs::{self, DirEntry};
 use std::path::Path;
 
 use colored::*;
-
 use regex::Regex;
 
 #[derive(Debug)]
@@ -86,7 +85,7 @@ impl Cmd {
         for (i, el) in self.matches.iter().enumerate() {
             let file_name = el.path();
             let file_name = file_name.to_str().unwrap();
-            print!("{:3}: ", i + 1);
+            print!("{:4}: ", i + 1);
             if el.file_type().unwrap().is_dir() {
                 println!("{}", format!("{}/", file_name).yellow());
             } else {
@@ -132,42 +131,41 @@ fn read_dir(path: &str, kind: SearchType, depth: Option<u32>) -> Vec<DirEntry> {
         if let Err(_) = &el {
             abort("Couldn't read directory. Try again!");
         }
+
         let el = el.unwrap();
-        let matches_kind = match kind {
-            SearchType::File => el.file_type().unwrap().is_file(),
-            SearchType::Directory => el.file_type().unwrap().is_dir(),
-            SearchType::Both => true,
-        };
-        if matches_kind {
-            items.push(el);
-        }
 
-        if items.last().is_none() || !is_directory(items.last().unwrap().path().to_str().unwrap()) {
-            continue;
-        }
+        if is_directory(&el.path().to_str().unwrap()) {
+            let mut new_depth: Option<u32> = None;
+            if depth.is_some() {
+                if depth.unwrap() > 0 {
+                    new_depth = Some(depth.unwrap() - 1);
+                } else {
+                    new_depth = Some(0);
+                }
+            }
 
-        let mut new_depth: Option<u32> = None;
-        if depth.is_some() {
-            if depth.unwrap() > 0 {
-                new_depth = Some(depth.unwrap() - 1);
-            } else {
-                new_depth = Some(0);
+            let should_recurse = match new_depth {
+                Some(val) => val > 0,
+                None => true,
+            };
+
+            if should_recurse {
+                let mut recursed_items = read_dir(&el.path().to_str().unwrap(), kind, new_depth);
+
+                items.append(&mut recursed_items);
             }
         }
 
-        let should_recurse = match new_depth {
-            Some(val) => val > 0,
-            None => true,
+        let matches_kind = match kind {
+            SearchType::File => el.file_type().unwrap().is_file(),
+            SearchType::Directory => el.file_type().unwrap().is_dir(),
+            SearchType::Both => {
+                el.file_type().unwrap().is_file() || el.file_type().unwrap().is_dir()
+            }
         };
 
-        if should_recurse {
-            let mut recursed_items = read_dir(
-                items.last().unwrap().path().to_str().unwrap(),
-                kind,
-                new_depth,
-            );
-
-            items.append(&mut recursed_items);
+        if matches_kind {
+            items.push(el);
         }
     }
     items
@@ -180,7 +178,7 @@ fn execute_cmd(cmd: &mut Cmd) {
         return;
     }
 
-    let rgx = Regex::new(&cmd.pattern);
+    let rgx = Regex::new(&format!("({})", cmd.pattern));
     if let Err(_) = rgx {
         abort("Sorry, incorrect pattern specified.");
     }
